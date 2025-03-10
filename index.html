@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Wallet</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1><i class="fas fa-wallet"></i> Virtual Wallet</h1>
+                <div class="header-actions">
+                    <button id="exportBtn" class="btn-icon" title="Export Data"><i class="fas fa-download"></i></button>
+                    <input type="file" id="importFile" accept=".json" style="display: none;">
+                    <button id="importBtn" class="btn-icon" title="Import Data"><i class="fas fa-upload"></i></button>
+                    <button id="clearBtn" class="btn-icon" title="Clear Data"><i class="fas fa-trash-alt"></i></button>
+                    <button id="darkModeToggle" class="btn-icon" title="Toggle Theme"><i class="fas fa-moon"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <section class="dashboard">
+            <div class="card balance-card glass-effect">
+                <h3><i class="fas fa-balance-scale"></i> Total Balance</h3>
+                <p id="balance" class="amount">₹0.00</p>
+            </div>
+            <div class="card income-card glass-effect">
+                <h3><i class="fas fa-arrow-up"></i> Income</h3>
+                <p id="income" class="amount">₹0.00</p>
+            </div>
+            <div class="card expense-card glass-effect">
+                <h3><i class="fas fa-arrow-down"></i> Expenses</h3>
+                <p id="expenses" class="amount">₹0.00</p>
+            </div>
+        </section>
+
+        <section class="budget card glass-effect">
+            <h2><i class="fas fa-piggy-bank"></i> Budget</h2>
+            <div class="budget-content">
+                <input type="number" id="budgetInput" placeholder="Set Monthly Budget" step="0.01" min="0">
+                <button id="setBudgetBtn" class="btn btn-gradient">Set</button>
+                <p>Remaining: <span id="budgetRemaining">₹0.00</span></p>
+            </div>
+        </section>
+
+        <section class="transaction-form card glass-effect">
+            <h2>Add Transaction</h2>
+            <form id="transactionForm" class="modern-form">
+                <div class="input-group">
+                    <input type="text" id="desc" placeholder="Description" required aria-label="Transaction Description">
+                    <input type="number" id="amount" placeholder="Amount" step="0.01" min="0.01" required aria-label="Transaction Amount">
+                </div>
+                <div class="input-group">
+                    <select id="type" aria-label="Transaction Type">
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select>
+                    <select id="category" aria-label="Transaction Category">
+                        <option value="salary">Salary</option>
+                        <option value="food">Food</option>
+                        <option value="rent">Rent</option>
+                        <option value="entertainment">Entertainment</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <button type="submit" class="btn btn-gradient">Add Transaction</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="transactions card glass-effect">
+            <h2><i class="fas fa-history"></i> Transaction History</h2>
+            <div class="filter-section">
+                <input type="text" id="searchInput" placeholder="Search transactions..." aria-label="Search Transactions">
+                <select id="filterType" aria-label="Filter by Type">
+                    <option value="all">All Types</option>
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                </select>
+                <select id="filterCategory" aria-label="Filter by Category">
+                    <option value="all">All Categories</option>
+                    <option value="salary">Salary</option>
+                    <option value="food">Food</option>
+                    <option value="rent">Rent</option>
+                    <option value="entertainment">Entertainment</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="summary">
+                <p>This Month: Income <span id="monthIncome">₹0.00</span> | Expenses <span id="monthExpenses">₹0.00</span></p>
+            </div>
+            <div class="transaction-list" id="transactionList"></div>
+        </section>
+    </div>
+
+    <script>
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const transactionForm = document.getElementById('transactionForm');
+        const exportBtn = document.getElementById('exportBtn');
+        const importBtn = document.getElementById('importBtn');
+        const importFile = document.getElementById('importFile');
+        const clearBtn = document.getElementById('clearBtn');
+        const setBudgetBtn = document.getElementById('setBudgetBtn');
+        const searchInput = document.getElementById('searchInput');
+        const filterType = document.getElementById('filterType');
+        const filterCategory = document.getElementById('filterCategory');
+
+        let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+        let budget = parseFloat(localStorage.getItem('budget')) || 0;
+        let lastDeleted = null;
+
+        // Dark Mode
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+        if (localStorage.getItem('darkMode') === 'true') toggleDarkMode();
+
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            darkModeToggle.innerHTML = `<i class="fas fa-${isDark ? 'sun' : 'moon'}"></i>`;
+            localStorage.setItem('darkMode', isDark);
+        }
+
+        // Form Submission
+        transactionForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            addTransaction();
+        });
+
+        // Budget Setting
+        setBudgetBtn.addEventListener('click', () => {
+            const budgetValue = parseFloat(document.getElementById('budgetInput').value);
+            if (isNaN(budgetValue) || budgetValue < 0) {
+                showNotification('Please enter a valid budget', 'error');
+                return;
+            }
+            budget = budgetValue;
+            localStorage.setItem('budget', budget);
+            updateUI();
+            document.getElementById('budgetInput').value = '';
+            showNotification('Budget set successfully', 'success');
+        });
+
+        // Filtering
+        searchInput.addEventListener('input', updateUI);
+        filterType.addEventListener('change', updateUI);
+        filterCategory.addEventListener('change', updateUI);
+
+        // Export/Import/Clear
+        exportBtn.addEventListener('click', exportData);
+        importBtn.addEventListener('click', () => importFile.click());
+        importFile.addEventListener('change', importData);
+        clearBtn.addEventListener('click', clearData);
+
+        function addTransaction() {
+            const desc = document.getElementById('desc').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const type = document.getElementById('type').value;
+            const category = document.getElementById('category').value;
+
+            if (!desc || isNaN(amount) || amount <= 0) {
+                showNotification('Please enter valid details', 'error');
+                return;
+            }
+
+            transactions.unshift({ desc, amount, type, category, date: new Date().toISOString() });
+            updateUI();
+            transactionForm.reset();
+            showNotification('Transaction added successfully', 'success');
+        }
+
+        function removeTransaction(index) {
+            lastDeleted = transactions.splice(index, 1)[0];
+            updateUI();
+            showNotification('Transaction removed', 'success', true);
+        }
+
+        function undoDelete() {
+            if (lastDeleted) {
+                transactions.unshift(lastDeleted);
+                lastDeleted = null;
+                updateUI();
+                showNotification('Transaction restored', 'success');
+            }
+        }
+
+        function updateUI() {
+            const balanceEl = document.getElementById('balance');
+            const incomeEl = document.getElementById('income');
+            const expensesEl = document.getElementById('expenses');
+            const transactionList = document.getElementById('transactionList');
+            const budgetRemaining = document.getElementById('budgetRemaining');
+            const monthIncomeEl = document.getElementById('monthIncome');
+            const monthExpensesEl = document.getElementById('monthExpenses');
+
+            let income = 0, expenses = 0, monthIncome = 0, monthExpenses = 0;
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+
+            const filteredTransactions = transactions.filter(txn => {
+                const matchesSearch = txn.desc.toLowerCase().includes(searchInput.value.toLowerCase());
+                const matchesType = filterType.value === 'all' || txn.type === filterType.value;
+                const matchesCategory = filterCategory.value === 'all' || txn.category === filterCategory.value;
+                return matchesSearch && matchesType && matchesCategory;
+            });
+
+            transactionList.innerHTML = '';
+            filteredTransactions.forEach((txn, index) => {
+                const date = new Date(txn.date);
+                const formattedDate = date.toLocaleDateString('en-IN');
+                const li = document.createElement('div');
+                li.className = `transaction-item ${txn.type} glass-effect`;
+                li.innerHTML = `
+                    <div class="txn-details">
+                        <span class="txn-desc">${txn.desc} (${txn.category})</span>
+                        <span class="txn-date">${formattedDate}</span>
+                    </div>
+                    <div class="txn-amount">
+                        <span>₹${formatNumber(txn.amount)}</span>
+                        <button class="btn-delete" onclick="removeTransaction(${index})" aria-label="Delete Transaction">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                transactionList.appendChild(li);
+
+                if (txn.type === 'income') {
+                    income += txn.amount;
+                    if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) monthIncome += txn.amount;
+                } else {
+                    expenses += txn.amount;
+                    if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) monthExpenses += txn.amount;
+                }
+            });
+
+            balanceEl.textContent = `₹${formatNumber(income - expenses)}`;
+            incomeEl.textContent = `₹${formatNumber(income)}`;
+            expensesEl.textContent = `₹${formatNumber(expenses)}`;
+            budgetRemaining.textContent = budget ? `₹${formatNumber(budget - expenses)}` : 'Not Set';
+            monthIncomeEl.textContent = `₹${formatNumber(monthIncome)}`;
+            monthExpensesEl.textContent = `₹${formatNumber(monthExpenses)}`;
+
+            localStorage.setItem('transactions', JSON.stringify(transactions));
+        }
+
+        function formatNumber(num) {
+            return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function showNotification(message, type, showUndo = false) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type} glass-effect`;
+            notification.innerHTML = message + (showUndo ? ' <button onclick="undoDelete()" class="btn-undo">Undo</button>' : '');
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 5000);
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(transactions);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'virtual_wallet_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showNotification('Data exported successfully', 'success');
+        }
+
+        function importData(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedData = JSON.parse(event.target.result);
+                    transactions = importedData;
+                    updateUI();
+                    showNotification('Data imported successfully', 'success');
+                } catch {
+                    showNotification('Invalid file format', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function clearData() {
+            if (confirm('Are you sure you want to clear all data?')) {
+                transactions = [];
+                budget = 0;
+                localStorage.clear();
+                updateUI();
+                showNotification('All data cleared', 'success');
+            }
+        }
+
+        updateUI();
+    </script>
+
+    <style>
+        :root {
+            --primary: #6c5ce7;
+            --secondary: #00cec9;
+            --background: #f0f2f5;
+            --card-bg: rgba(255, 255, 255, 0.9);
+            --text: #2d3436;
+            --shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .dark-mode {
+            --primary: #a29bfe;
+            --secondary: #00b894;
+            --background: #1e272e;
+            --card-bg: rgba(45, 52, 54, 0.9);
+            --text: #dfe6e9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            padding: 1.5rem 2rem;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+
+        h1 {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-weight: 600;
+        }
+
+        .dashboard, .budget-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            padding: 2rem;
+            border-radius: 20px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-effect {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow);
+        }
+
+        .card h3, .budget h2 {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .amount {
+            font-size: 2.5rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modern-form, .filter-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            padding: 1rem 0;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 20px;
+            flex: 1;
+        }
+
+        input, select {
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.3);
+            background: white;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(108, 92, 231, 0.4);
+        }
+
+        .btn-icon {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            padding: 10px;
+            border-radius: 50%;
+            font-size: 1.2rem;
+            cursor: pointer;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .transaction-list {
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.2rem;
+            margin: 15px 0;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .transaction-item.income { border-left: 4px solid var(--secondary); }
+        .transaction-item.expense { border-left: 4px solid #ff6b6b; }
+
+        .transaction-item:hover {
+            transform: translateX(5px);
+        }
+
+        .txn-details { display: flex; flex-direction: column; }
+        .txn-desc { font-weight: 500; }
+        .txn-date { font-size: 0.9rem; opacity: 0.7; }
+        .txn-amount { display: flex; align-items: center; gap: 20px; font-weight: 600; }
+
+        .btn-delete {
+            background: rgba(255, 75, 75, 0.1);
+            border: none;
+            padding: 8px;
+            border-radius: 50%;
+            color: #ff4b4b;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-delete:hover {
+            background: rgba(255, 75, 75, 0.2);
+            transform: scale(1.1);
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 15px 30px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 4.7s;
+        }
+
+        .notification.success { background: var(--secondary); }
+        .notification.error { background: #ff4b4b; }
+
+        .btn-undo {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            padding: 5px 15px;
+            margin-left: 10px;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .btn-undo:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .summary {
+            margin: 1rem 0;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @media (max-width: 768px) {
+            .input-group, .filter-section { flex-direction: column; }
+            .dashboard, .budget-content { grid-template-columns: 1fr; }
+            .container { padding: 15px; }
+        }
+    </style>
+</body>
+</html>
